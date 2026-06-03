@@ -681,8 +681,24 @@ window.openManageAccts=function(){
   });
   const uh=document.createElement('div');uh.style.cssText='font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:12px 4px 6px;font-weight:600;border-bottom:1px solid var(--border);margin-bottom:8px';uh.textContent='💳 Otros métodos';ct.appendChild(uh);
   UNI.forEach(p=>addMgItem(ct,p));
-  const ar=document.createElement('div');ar.style.cssText='padding:12px;background:var(--bg3);border-radius:var(--rs);margin-top:12px';
-  ar.innerHTML=`<div style="font-size:13px;color:var(--text2);margin-bottom:8px">➕ Agregar cuenta no listada</div><input class="ti" id="mg-ci" type="text" placeholder="Ej: Cripto, Nequi..." style="margin-bottom:8px"/><button onclick="addMgCustom()" style="width:100%;padding:10px;background:rgba(108,99,255,.15);border:1px solid rgba(108,99,255,.3);border-radius:var(--rs);color:#a89dff;font-size:14px;font-weight:600;cursor:pointer">+ Agregar</button>`;
+  // Add bank selector for adding new accounts
+  const ar=document.createElement('div');
+  ar.style.cssText='padding:14px;background:var(--bg3);border-radius:var(--rs);margin-top:16px;border:1px solid var(--border)';
+  ar.innerHTML=`
+    <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px">➕ Agregar banco o cuenta</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Selecciona un banco</div>
+    <select id="mg-bank-sel" class="si" style="margin-bottom:10px" onchange="onMgBankChange()">
+      <option value="">— Elige un banco —</option>
+      ${ALL_BANKS.map(b=>`<option value="${b.val}">${b.label}</option>`).join('')}
+      <option value="_custom">📦 Otra cuenta (nombre libre)</option>
+    </select>
+    <div id="mg-bank-prods" style="display:none;margin-bottom:10px"></div>
+    <div id="mg-custom-row" style="display:none">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Nombre de la cuenta</div>
+      <input class="ti" id="mg-ci" type="text" placeholder="Ej: Cripto, Nequi, Zelle..." style="margin-bottom:8px"/>
+      <button onclick="addMgCustom()" style="width:100%;padding:10px;background:rgba(108,99,255,.15);border:1px solid rgba(108,99,255,.3);border-radius:var(--rs);color:#a89dff;font-size:14px;font-weight:600;cursor:pointer">+ Agregar</button>
+    </div>
+  `;
   ct.appendChild(ar);
   openOv('mg-ov');
 };
@@ -696,6 +712,67 @@ function addMgItem(ct,p){
   ct.appendChild(el);
   if(p.credit){const row=document.createElement('div');row.id=lid;row.style.cssText=`display:${active?'block':'none'};padding:8px 12px 12px;background:var(--bg3);border-radius:0 0 var(--rs) var(--rs);margin-top:-8px;margin-bottom:4px`;const eL=(cfg?.limits||{})[p.val]||'';row.innerHTML=`<div style="font-size:12px;color:var(--text2);margin-bottom:6px">Límite de ${p.val} (DOP)</div><input class="ti mg-lim" data-p="${p.val}" type="text" inputmode="decimal" placeholder="Ej: 17,000" value="${eL?Number(eL).toLocaleString('es-DO'):''}" style="font-size:15px;padding:10px 14px"/>`;ct.appendChild(row);setTimeout(()=>bindFmt(row.querySelector('input')),50);}
 }
+
+
+window.onMgBankChange=function(){
+  const sel=document.getElementById('mg-bank-sel');
+  const prodsDiv=document.getElementById('mg-bank-prods');
+  const customRow=document.getElementById('mg-custom-row');
+  const val=sel.value;
+  if(!val){prodsDiv.style.display='none';customRow.style.display='none';return;}
+  if(val==='_custom'){prodsDiv.style.display='none';customRow.style.display='block';return;}
+  customRow.style.display='none';
+  const prods=BP[val]||[];
+  if(!prods.length){prodsDiv.style.display='none';return;}
+  prodsDiv.style.display='block';
+  prodsDiv.innerHTML='<div style="font-size:12px;color:var(--text2);margin-bottom:8px">Selecciona los productos</div>';
+  prods.forEach(p=>{
+    const already=(cfg?.products||[]).includes(p.val);
+    const el=document.createElement('div');
+    el.className='ob-c'+(already?' on':'');
+    el.dataset.v=p.val;
+    el.style.marginBottom='8px';
+    el.innerHTML=`<span class="ob-ci">${p.ico}</span><span class="ob-cl2">${p.val}${already?' <span style="font-size:11px;color:var(--text2)">(ya agregada)</span>':''}</span><span class="ob-cm">✅</span>`;
+    if(!already) el.onclick=()=>el.classList.toggle('on');
+    prodsDiv.appendChild(el);
+    if(p.credit&&!already){
+      const row=document.createElement('div');
+      row.id='mgnew-lim-'+p.val.replace(/ /g,'_');
+      row.style.cssText='display:none;padding:8px 12px 10px;background:var(--bg2);border-radius:0 0 var(--rs) var(--rs);margin-top:-8px;margin-bottom:4px';
+      row.innerHTML=`<div style="font-size:12px;color:var(--text2);margin-bottom:6px">Límite de ${p.val} (DOP)</div><input class="ti mgnew-lim" data-p="${p.val}" type="text" inputmode="decimal" placeholder="Ej: 17,000" style="font-size:15px;padding:10px 14px"/>`;
+      el.onclick=()=>{
+        el.classList.toggle('on');
+        row.style.display=el.classList.contains('on')?'block':'none';
+      };
+      prodsDiv.appendChild(row);
+      setTimeout(()=>bindFmt(row.querySelector('input')),50);
+    }
+  });
+  // Add button
+  const addBtn=document.createElement('button');
+  addBtn.textContent='+ Agregar seleccionados';
+  addBtn.style.cssText='width:100%;padding:10px;background:rgba(108,99,255,.15);border:1px solid rgba(108,99,255,.3);border-radius:var(--rs);color:#a89dff;font-size:14px;font-weight:600;cursor:pointer;margin-top:8px';
+  addBtn.onclick=()=>{
+    const selected=[...prodsDiv.querySelectorAll('.ob-c.on')].map(el=>el.dataset.v).filter(v=>v&&!(cfg?.products||[]).includes(v));
+    if(!selected.length){alert('Selecciona al menos un producto nuevo');return;}
+    if(!cfg.products)cfg.products=[];
+    cfg.products=[...new Set([...cfg.products,...selected])];
+    // Collect limits
+    if(!cfg.limits)cfg.limits={};
+    prodsDiv.querySelectorAll('.mgnew-lim').forEach(inp=>{
+      const v=parseFloat(inp.value.replace(/[^0-9.]/g,''))||0;
+      if(v>0)cfg.limits[inp.dataset.p]=v;
+    });
+    // Add bank to cfg.banks if not already there
+    const bankVal=document.getElementById('mg-bank-sel').value;
+    if(bankVal&&bankVal!=='_custom'&&!(cfg.banks||[]).includes(bankVal)){
+      if(!cfg.banks)cfg.banks=[];
+      cfg.banks.push(bankVal);
+    }
+    saveCfg().then(()=>{openManageAccts();setSS('ok','Cuentas actualizadas');});
+  };
+  prodsDiv.appendChild(addBtn);
+};
 
 window.addMgCustom=function(){const inp=document.getElementById('mg-ci');const v=inp.value.trim();if(!v)return;if(!(cfg.products||[]).includes(v)){cfg.products=[...(cfg.products||[]),v];}inp.value='';openManageAccts();};
 
