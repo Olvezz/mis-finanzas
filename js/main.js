@@ -844,7 +844,14 @@ document.getElementById('ms7-nx').onclick=async()=>{
 
 // ─── BELL BUTTON ──────────────────────────────────────────────────────────
 document.getElementById('bell-btn').onclick=()=>openNotifPanel();
-window.openNotifPanel=function(){renderNotifs();document.getElementById('notif-panel').style.right='0';document.getElementById('notif-backdrop').style.display='block';};
+window.openNotifPanel=function(){
+  renderNotifs();
+  document.getElementById('notif-panel').style.right='0';
+  document.getElementById('notif-backdrop').style.display='block';
+  // Clear red badge when panel is opened
+  const badge=document.getElementById('notif-badge');
+  if(badge)badge.style.display='none';
+};
 window.closeNotifPanel=function(){document.getElementById('notif-panel').style.right='-100%';document.getElementById('notif-backdrop').style.display='none';};
 
 // ─── PUSH NOTIFICATIONS ───────────────────────────────────────────────────
