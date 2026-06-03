@@ -174,6 +174,7 @@ function listenTxs(){
   unsub=onSnapshot(q,snap=>{
     txs=snap.docs.map(d=>{const dt=d.data();return{...dt,id:d.id,date:dt.date?.toDate?dt.date.toDate():new Date()};});
     setSS('ok','Sincronizado');
+    recalcBalances();
     buildNotifications();
     updateDash();renderHist();
   },e=>{setSS('er','Error de sync');console.error(e);});
@@ -301,6 +302,14 @@ function openReg(type){
   document.getElementById('desc-f').value='';
   document.getElementById('dop-b').className='cb on';document.getElementById('usd-b').className='cb';
   document.getElementById('ms-5').style.display=type==='income'?'none':'';
+  // Rebuild category select with custom categories
+  const catSel=document.getElementById('cat-f');
+  const existingVals=[...catSel.options].map(o=>o.value);
+  (cfg?.customCategories||[]).forEach(c=>{
+    if(!existingVals.includes(c.name)){
+      const o=document.createElement('option');o.value=c.name;o.textContent=`${c.emoji} ${c.name}`;catSel.appendChild(o);
+    }
+  });
   document.getElementById('ms-6').style.display=type==='expense'?'none':'';
   // step 1
   const o1=document.getElementById('ms1-o');o1.innerHTML='';
@@ -407,13 +416,48 @@ async function saveIncome(){
 
 // ─── BALANCES ─────────────────────────────────────────────────────────────
 function updateBalance(acct,delta){
+  // Balance is now fully recalculated from transactions
+  // This function kept for compatibility but recalcBalances handles truth
   if(!cfg)return;
   if(!cfg.balances)cfg.balances={};
   cfg.balances[acct]=(cfg.balances[acct]||0)+delta;
-  saveCfg();
 }
 
 function getBalance(acct){return cfg?.balances?.[acct]??null;}
+
+
+// ─── RECALC BALANCES ───────────────────────────────────────────────────────
+// Always recalculate from scratch based on:
+// 1. Initial balances set in onboarding (cfg.initialBalances)
+// 2. All transactions (income adds, expense subtracts)
+function recalcBalances(){
+  if(!cfg) return;
+  // Start from initial balances set during onboarding
+  const base = {...(cfg.initialBalances || cfg.balances || {})};
+  // If we have no initialBalances yet, snapshot current as base on first run
+  if(!cfg.initialBalances && Object.keys(base).length > 0){
+    cfg.initialBalances = {...base};
+  }
+  // Recalculate from initial + all transactions
+  const calc = {...(cfg.initialBalances||{})};
+  txs.forEach(t => {
+    if(t.type === 'expense'){
+      // Deduct from source account
+      if(t.account && !t.account.includes('Crédito')){
+        calc[t.account] = (calc[t.account]||0) - (t.amountDOP||t.amount||0);
+      }
+    } else if(t.type === 'income'){
+      // Add to destination account
+      const dest = t.destAccount || t.account;
+      if(dest && !dest.includes('Crédito')){
+        calc[dest] = (calc[dest]||0) + (t.amountDOP||t.amount||0);
+      }
+    }
+  });
+  cfg.balances = calc;
+  // Save silently (no await to avoid blocking UI)
+  saveCfg().catch(()=>{});
+}
 
 // ─── RECURRING ────────────────────────────────────────────────────────────
 // Each recurring item stored in cfg.recurrings = [{id, type, subtype, desc, amount, currency, day, account, destAccount, category, active}]
@@ -718,6 +762,12 @@ document.getElementById('ctx-ed').onclick=()=>{
   document.getElementById('ed-cat').value=ctxTx.category||'Otro';
   document.getElementById('ed-cat-l').style.display=ctxTx.type==='income'?'none':'';
   document.getElementById('ed-cat').style.display=ctxTx.type==='income'?'none':'';
+  // Add custom categories to edit select
+  const edCatSel=document.getElementById('ed-cat');
+  const edExisting=[...edCatSel.options].map(o=>o.value);
+  (cfg?.customCategories||[]).forEach(c=>{
+    if(!edExisting.includes(c.name)){const o=document.createElement('option');o.value=c.name;o.textContent=`${c.emoji} ${c.name}`;edCatSel.appendChild(o);}
+  });
   const accSel=document.getElementById('ed-acc');accSel.innerHTML='';
   getAccList(ctxTx.type).forEach(a=>{const o=document.createElement('option');o.value=a.val;o.textContent=a.label;if(a.val===ctxTx.account)o.selected=true;accSel.appendChild(o);});
   bindFmt(document.getElementById('ed-amt'));
@@ -797,6 +847,97 @@ function renderChartLegend(items,total){
   const el=document.getElementById('chart-legend');el.innerHTML='';
   items.forEach(item=>{const pct=total>0?Math.round(item.val/total*100):0;const d=document.createElement('div');d.className='leg-i';d.innerHTML=`<div class="leg-dot" style="background:${item.color}"></div><div style="flex:1">${CE[item.label]||'📦'} ${item.label}</div><div style="font-weight:600">RD$${fmt(item.val)}</div><div style="color:var(--text2);font-size:12px;margin-left:8px">${pct}%</div>`;el.appendChild(d);});
 }
+
+
+// ─── CATEGORY CONFIG ───────────────────────────────────────────────────────
+// Custom categories stored in cfg.customCategories = [{name, emoji, limit}]
+// Custom limits for default cats in cfg.catLimits = {name: limit}
+
+function getEffectiveLimits(){
+  return {...CL, ...(cfg?.catLimits||{})};
+}
+
+function getEffectiveCategories(){
+  // Default categories
+  const defaults = Object.keys(CE).filter(k=>k!=='Ingreso');
+  const customs = (cfg?.customCategories||[]).map(c=>c.name);
+  return [...new Set([...defaults, ...customs])];
+}
+
+function getCatEmoji(name){
+  return CE[name] || (cfg?.customCategories||[]).find(c=>c.name===name)?.emoji || '📦';
+}
+
+window.openCatConfig=function(){
+  closeOv('pf-ov');
+  const ct = document.getElementById('cat-cfg-list');
+  ct.innerHTML = '';
+  const limits = getEffectiveLimits();
+  const cats = getEffectiveCategories();
+  cats.forEach(name => {
+    const emoji = getCatEmoji(name);
+    const limit = limits[name] || 0;
+    const isCustom = (cfg?.customCategories||[]).some(c=>c.name===name);
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)';
+    div.innerHTML = `
+      <div style="font-size:20px;flex-shrink:0">${emoji}</div>
+      <div style="flex:1;font-size:14px;font-weight:500">${name}</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <input class="ti cat-limit-inp" data-cat="${name}"
+          type="text" inputmode="decimal"
+          value="${limit > 0 ? Number(limit).toLocaleString('es-DO') : ''}"
+          placeholder="Sin límite"
+          style="width:110px;padding:8px 10px;font-size:14px;text-align:right"/>
+        ${isCustom ? `<button onclick="removeCustomCat('${name}')" style="background:rgba(255,77,77,.15);border:1px solid rgba(255,77,77,.3);color:#ff8080;border-radius:var(--rs);padding:6px 8px;font-size:14px;cursor:pointer">🗑️</button>` : ''}
+      </div>`;
+    ct.appendChild(div);
+    setTimeout(()=>bindFmt(div.querySelector('.cat-limit-inp')), 50);
+  });
+  openOv('cat-cfg-ov');
+};
+
+window.addCustomCategory=function(){
+  const name = document.getElementById('cat-new-name').value.trim();
+  const emoji = document.getElementById('cat-new-emoji').value.trim() || '📦';
+  const limit = parseFloat((document.getElementById('cat-new-limit').value||'0').replace(/[^0-9.]/g,''))||0;
+  if(!name){ document.getElementById('cat-new-name').style.borderColor='var(--red)'; return; }
+  if(!cfg.customCategories) cfg.customCategories=[];
+  if(cfg.customCategories.some(c=>c.name===name)||Object.keys(CE).includes(name)){
+    alert('Ya existe una categoría con ese nombre'); return;
+  }
+  cfg.customCategories.push({name, emoji, limit});
+  // Also add to CE and CL live
+  CE[name] = emoji;
+  if(limit > 0) CL[name] = limit;
+  document.getElementById('cat-new-name').value='';
+  document.getElementById('cat-new-emoji').value='';
+  document.getElementById('cat-new-limit').value='';
+  openCatConfig(); // refresh list
+};
+
+window.removeCustomCat=function(name){
+  if(!confirm(`¿Eliminar la categoría "${name}"?`)) return;
+  cfg.customCategories = (cfg.customCategories||[]).filter(c=>c.name!==name);
+  delete CE[name]; delete CL[name];
+  openCatConfig();
+};
+
+window.saveCategoryConfig=async function(){
+  if(!cfg.catLimits) cfg.catLimits={};
+  document.querySelectorAll('.cat-limit-inp').forEach(inp=>{
+    const v = parseFloat(inp.value.replace(/[^0-9.]/g,''))||0;
+    const cat = inp.dataset.cat;
+    if(v > 0){ cfg.catLimits[cat]=v; CL[cat]=v; }
+    else { delete cfg.catLimits[cat]; if(cat in CL && !Object.keys(CE).includes(cat)) delete CL[cat]; }
+  });
+  await saveCfg();
+  closeOv('cat-cfg-ov');
+  setSS('ok','Categorías guardadas');
+  buildNotifications();
+  updateDash();
+};
+
 
 // ─── STEP 7 — RECURRING DETAIL ─────────────────────────────────────────────
 const REC_SUBTYPES = {
@@ -883,6 +1024,37 @@ document.addEventListener('keydown', e => {
     document.getElementById('ed-sv').click(); return;
   }
 });
+
+
+window.openResetBalances=function(){
+  closeOv('pf-ov');
+  const ct=document.getElementById('reset-bal-fields');
+  ct.innerHTML='';
+  const prods=(cfg?.products||[]).filter(p=>!p.toLowerCase().includes('crédito'));
+  prods.forEach(p=>{
+    const cur=(cfg?.initialBalances||cfg?.balances||{})[p]||0;
+    const div=document.createElement('div');div.style.cssText='margin-bottom:12px';
+    div.innerHTML=`<div style="font-size:13px;font-weight:500;margin-bottom:6px">${PI[p]||'💳'} ${p}</div><input class="ti rb-inp" data-p="${p}" type="text" inputmode="decimal" placeholder="Saldo actual" value="${cur?Number(cur).toLocaleString('es-DO'):''}"/>`;
+    ct.appendChild(div);
+    setTimeout(()=>bindFmt(div.querySelector('input')),50);
+  });
+  openOv('reset-bal-ov');
+};
+
+window.saveResetBalances=async function(){
+  const newBals={};
+  document.querySelectorAll('.rb-inp').forEach(inp=>{
+    const v=parseFloat(inp.value.replace(/[^0-9.-]/g,''))||0;
+    newBals[inp.dataset.p]=v;
+  });
+  cfg.initialBalances=newBals;
+  cfg.balances={...newBals};
+  await saveCfg();
+  recalcBalances();
+  closeOv('reset-bal-ov');
+  updateDash();buildAccList();
+  setSS('ok','Saldos actualizados');
+};
 
 // ─── BELL BUTTON ──────────────────────────────────────────────────────────
 document.getElementById('bell-btn').onclick=()=>openNotifPanel();

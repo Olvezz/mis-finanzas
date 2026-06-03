@@ -251,6 +251,8 @@
       <div id="pf-email" style="font-size:13px;color:var(--text2)">—</div>
     </div>
     <div style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:16px;line-height:1.6">☁️ Tus datos están guardados de forma privada.</div>
+    <button onclick="openCatConfig()" style="width:100%;padding:14px;background:rgba(108,99,255,.12);border:1px solid rgba(108,99,255,.25);border-radius:var(--rs);color:#a89dff;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px">⚙️ Configurar categorías</button>
+    <button onclick="openResetBalances()" style="width:100%;padding:14px;background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.2);border-radius:var(--rs);color:#f5c060;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px">💰 Actualizar saldos iniciales</button>
     <button class="lo-btn" id="btn-lo">🚪 Cerrar sesión</button>
   </div>
 </div>
@@ -266,6 +268,45 @@
     <div class="sh-t">🔁 Pagos recurrentes</div>
     <div id="rec-manage-list"></div>
     <button onclick="closeOv('rec-mg-ov')" style="width:100%;padding:12px;background:none;border:1px solid var(--border);border-radius:var(--rs);color:var(--text2);font-size:14px;cursor:pointer;margin-top:8px">Cerrar</button>
+  </div>
+</div>
+
+<!-- CATEGORY CONFIG OVERLAY -->
+<div class="ov" id="cat-cfg-ov">
+  <div class="sheet">
+    <button class="cls" onclick="closeOv('cat-cfg-ov')">✕</button>
+    <div class="hdl"></div>
+    <div class="sh-t">⚙️ Configurar categorías</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5">
+      Edita el límite mensual de cada categoría o agrega una nueva.
+    </div>
+    <div id="cat-cfg-list"></div>
+    <!-- Add new category -->
+    <div style="background:var(--bg3);border-radius:var(--rs);padding:14px;margin-top:8px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">➕ Nueva categoría</div>
+      <div class="fl">Nombre</div>
+      <input class="ti" id="cat-new-name" type="text" placeholder="Ej: Mascotas, Viajes..."/>
+      <div class="fl">Emoji</div>
+      <input class="ti" id="cat-new-emoji" type="text" placeholder="Ej: 🐾" maxlength="2" style="font-size:20px;text-align:center"/>
+      <div class="fl">Límite mensual (DOP, 0 = sin límite)</div>
+      <input class="ti" id="cat-new-limit" type="text" inputmode="decimal" placeholder="Ej: 3,000"/>
+      <button onclick="addCustomCategory()" style="width:100%;padding:12px;background:rgba(108,99,255,.15);border:1px solid rgba(108,99,255,.3);border-radius:var(--rs);color:#a89dff;font-size:14px;font-weight:600;cursor:pointer;margin-top:12px">+ Agregar categoría</button>
+    </div>
+    <button class="pb" onclick="saveCategoryConfig()" style="margin-top:12px">Guardar cambios ✓</button>
+  </div>
+</div>
+
+<!-- RESET BALANCES OVERLAY -->
+<div class="ov" id="reset-bal-ov">
+  <div class="sheet">
+    <button class="cls" onclick="closeOv('reset-bal-ov')">✕</button>
+    <div class="hdl"></div>
+    <div class="sh-t">💰 Saldos iniciales</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5">
+      Actualiza el saldo actual de tus cuentas. La app recalculará todo desde aquí.
+    </div>
+    <div id="reset-bal-fields"></div>
+    <button class="pb" onclick="saveResetBalances()">Guardar saldos ✓</button>
   </div>
 </div>
 </body>
