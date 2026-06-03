@@ -391,11 +391,16 @@ async function saveExpense(){
   const amt=rawAmt('amt-f');
   const desc=document.getElementById('desc-f').value.trim();
   const tipo=[...document.querySelectorAll('#ms1-o .opt-b.sel')][0]?.textContent?.includes('Recurrente')?'recurrente':'unico';
-  goReg('ok');
-  document.getElementById('ok-msg').textContent=`−RD$${fmt(rCurr==='USD'?amt*EX:amt)} · ${desc}`;
   const amtDOP=rCurr==='USD'?amt*EX:amt;
-  // Update account balance
-  updateBalance(acct,-amtDOP);
+  // Check balance warning for non-credit accounts
+  const isCredit=acct.toLowerCase().includes('crédito');
+  const curBal=(cfg?.balances||{})[acct]??null;
+  if(!isCredit && curBal!==null && curBal-amtDOP<0){
+    const confirmed=confirm(`⚠️ Este gasto dejará tu cuenta "${acct}" en negativo (RD$${fmt(curBal-amtDOP)}). ¿Continuar de todas formas?`);
+    if(!confirmed) return;
+  }
+  goReg('ok');
+  document.getElementById('ok-msg').textContent=`−RD$${fmt(amtDOP)} · ${desc}`;
   await addTx({type:'expense',currency:rCurr,amount:amt,amountDOP:amtDOP,desc,account:acct,category:cat,tipo,date:serverTimestamp()});
   setTimeout(()=>closeOv('reg-ov'),1600);
 }
@@ -432,30 +437,28 @@ function getBalance(acct){return cfg?.balances?.[acct]??null;}
 // 2. All transactions (income adds, expense subtracts)
 function recalcBalances(){
   if(!cfg) return;
-  // Start from initial balances set during onboarding
-  const base = {...(cfg.initialBalances || cfg.balances || {})};
-  // If we have no initialBalances yet, snapshot current as base on first run
-  if(!cfg.initialBalances && Object.keys(base).length > 0){
-    cfg.initialBalances = {...base};
+  // Snapshot initial balances on first run if not set
+  if(!cfg.initialBalances){
+    cfg.initialBalances = {...(cfg.balances||{})};
   }
-  // Recalculate from initial + all transactions
+  // Always recalculate from initialBalances + all transactions
   const calc = {...(cfg.initialBalances||{})};
   txs.forEach(t => {
-    if(t.type === 'expense'){
-      // Deduct from source account
-      if(t.account && !t.account.includes('Crédito')){
-        calc[t.account] = (calc[t.account]||0) - (t.amountDOP||t.amount||0);
+    const amt = t.amountDOP || t.amount || 0;
+    if(t.type==='expense'){
+      // Only deduct from non-credit accounts (credit tracked separately by usage)
+      const acct = t.account||'';
+      if(acct && !acct.toLowerCase().includes('crédito') && acct !== 'Transferencia' && acct !== 'Depósito' && acct !== 'PayPal' && acct !== 'Pago móvil' && acct !== 'Internacional' && acct !== 'Otro'){
+        calc[acct] = (calc[acct]||0) - amt;
       }
-    } else if(t.type === 'income'){
-      // Add to destination account
-      const dest = t.destAccount || t.account;
-      if(dest && !dest.includes('Crédito')){
-        calc[dest] = (calc[dest]||0) + (t.amountDOP||t.amount||0);
+    } else if(t.type==='income'){
+      const dest = t.destAccount||'';
+      if(dest && !dest.toLowerCase().includes('crédito')){
+        calc[dest] = (calc[dest]||0) + amt;
       }
     }
   });
   cfg.balances = calc;
-  // Save silently (no await to avoid blocking UI)
   saveCfg().catch(()=>{});
 }
 
@@ -935,10 +938,10 @@ function getEffectiveLimits(){
 }
 
 function getEffectiveCategories(){
-  // Default categories
-  const defaults = Object.keys(CE).filter(k=>k!=='Ingreso');
-  const customs = (cfg?.customCategories||[]).map(c=>c.name);
-  return [...new Set([...defaults, ...customs])];
+  const hidden=cfg?.hiddenCategories||[];
+  const defaults=Object.keys(CE).filter(k=>k!=='Ingreso'&&!hidden.includes(k));
+  const customs=(cfg?.customCategories||[]).map(c=>c.name).filter(n=>!hidden.includes(n));
+  return [...new Set([...defaults,...customs])];
 }
 
 function getCatEmoji(name){
@@ -951,7 +954,8 @@ window.openCatConfig=function(){
   ct.innerHTML = '';
   const limits = getEffectiveLimits();
   const cats = getEffectiveCategories();
-  cats.forEach(name => {
+  const hiddenCats = cfg?.hiddenCategories||[];
+  cats.filter(name=>!hiddenCats.includes(name)).forEach(name => {
     const emoji = getCatEmoji(name);
     const limit = limits[name] || 0;
     const isCustom = (cfg?.customCategories||[]).some(c=>c.name===name);
@@ -965,12 +969,25 @@ window.openCatConfig=function(){
           type="text" inputmode="decimal"
           value="${limit > 0 ? Number(limit).toLocaleString('es-DO') : ''}"
           placeholder="Sin límite"
-          style="width:110px;padding:8px 10px;font-size:14px;text-align:right"/>
-        ${isCustom ? `<button onclick="removeCustomCat('${name}')" style="background:rgba(255,77,77,.15);border:1px solid rgba(255,77,77,.3);color:#ff8080;border-radius:var(--rs);padding:6px 8px;font-size:14px;cursor:pointer">🗑️</button>` : ''}
+          style="width:100px;padding:8px 10px;font-size:14px;text-align:right"/>
+        <button onclick="hideCat('${name}')" style="background:rgba(255,77,77,.15);border:1px solid rgba(255,77,77,.3);color:#ff8080;border-radius:var(--rs);padding:6px 8px;font-size:14px;cursor:pointer;flex-shrink:0">🗑️</button>
       </div>`;
     ct.appendChild(div);
     setTimeout(()=>bindFmt(div.querySelector('.cat-limit-inp')), 50);
   });
+  // Show hidden categories section if any
+  if(hiddenCats.length){
+    const hdr=document.createElement('div');
+    hdr.style.cssText='font-size:12px;color:var(--text2);margin-top:14px;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px';
+    hdr.textContent='Categorías ocultas';
+    ct.appendChild(hdr);
+    hiddenCats.forEach(name=>{
+      const div=document.createElement('div');
+      div.style.cssText='display:flex;align-items:center;gap:10px;padding:8px 0;opacity:.5';
+      div.innerHTML=`<div style="font-size:18px">${getCatEmoji(name)}</div><div style="flex:1;font-size:13px">${name}</div><button onclick="restoreCat('${name}')" style="background:rgba(61,214,140,.1);border:1px solid rgba(61,214,140,.2);color:#3dd68c;border-radius:var(--rs);padding:5px 10px;font-size:12px;cursor:pointer">Restaurar</button>`;
+      ct.appendChild(div);
+    });
+  }
   openOv('cat-cfg-ov');
 };
 
@@ -993,9 +1010,17 @@ window.addCustomCategory=function(){
   openCatConfig(); // refresh list
 };
 
+window.hideCat=function(name){
+  if(!cfg.hiddenCategories)cfg.hiddenCategories=[];
+  if(!cfg.hiddenCategories.includes(name)) cfg.hiddenCategories.push(name);
+  openCatConfig();
+};
+window.restoreCat=function(name){
+  cfg.hiddenCategories=(cfg.hiddenCategories||[]).filter(c=>c!==name);
+  openCatConfig();
+};
 window.removeCustomCat=function(name){
-  if(!confirm(`¿Eliminar la categoría "${name}"?`)) return;
-  cfg.customCategories = (cfg.customCategories||[]).filter(c=>c.name!==name);
+  cfg.customCategories=(cfg.customCategories||[]).filter(c=>c.name!==name);
   delete CE[name]; delete CL[name];
   openCatConfig();
 };
@@ -1003,12 +1028,15 @@ window.removeCustomCat=function(name){
 window.saveCategoryConfig=async function(){
   if(!cfg.catLimits) cfg.catLimits={};
   document.querySelectorAll('.cat-limit-inp').forEach(inp=>{
-    const v = parseFloat(inp.value.replace(/[^0-9.]/g,''))||0;
-    const cat = inp.dataset.cat;
-    if(v > 0){ cfg.catLimits[cat]=v; CL[cat]=v; }
-    else { delete cfg.catLimits[cat]; if(cat in CL && !Object.keys(CE).includes(cat)) delete CL[cat]; }
+    const v=parseFloat(inp.value.replace(/[^0-9.]/g,''))||0;
+    const cat=inp.dataset.cat;
+    if(v>0){cfg.catLimits[cat]=v;CL[cat]=v;}
+    else{delete cfg.catLimits[cat];}
   });
+  // Save hidden categories too
   await saveCfg();
+  // Reload effective limits
+  Object.assign(CL,cfg.catLimits||{});
   closeOv('cat-cfg-ov');
   setSS('ok','Categorías guardadas');
   buildNotifications();
