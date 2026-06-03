@@ -551,6 +551,19 @@ function buildNotifications(){
   // Update badge
   const count=notifications.filter(n=>n.type!=='info').length;
   const nb=document.getElementById('notif-badge');if(nb)nb.style.display=count>0?'block':'none';
+  // Auto-dismiss home alerts after 60s
+  clearTimeout(window._alertTimer);
+  if(count>0){
+    window._alertTimer=setTimeout(()=>{
+      const ct=document.getElementById('alerts-ct');
+      if(!ct)return;
+      ct.style.transition='opacity 1.2s ease';
+      ct.style.opacity='0';
+      setTimeout(()=>{
+        if(ct){ct.innerHTML='';ct.style.opacity='1';ct.style.transition='';}
+      },1200);
+    },60000);
+  }
 }
 
 function renderNotifs(){
@@ -841,6 +854,35 @@ document.getElementById('ms7-nx').onclick=async()=>{
   setTimeout(()=>closeOv('reg-ov'),2000);
 };
 
+
+
+// ── ENTER KEY NAVIGATION IN MODAL ──────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Enter') return;
+  const regOv = document.getElementById('reg-ov');
+  if(!regOv.classList.contains('on')) return;
+  e.preventDefault();
+  // Step 2: amount → click continue
+  const ms2 = document.getElementById('ms-2');
+  if(ms2 && ms2.style.display !== 'none' && ms2.classList.contains('on')){
+    document.getElementById('ms2-nx').click(); return;
+  }
+  // Step 3: description → click continue
+  const ms3 = document.getElementById('ms-3');
+  if(ms3 && ms3.style.display !== 'none' && ms3.classList.contains('on')){
+    document.getElementById('ms3-nx').click(); return;
+  }
+  // Step 7: recurring day field → click save
+  const ms7 = document.getElementById('ms-7');
+  if(ms7 && ms7.style.display !== 'none' && ms7.classList.contains('on')){
+    document.getElementById('ms7-nx').click(); return;
+  }
+  // Edit modal
+  const edOv = document.getElementById('ed-ov');
+  if(edOv && edOv.classList.contains('on')){
+    document.getElementById('ed-sv').click(); return;
+  }
+});
 
 // ─── BELL BUTTON ──────────────────────────────────────────────────────────
 document.getElementById('bell-btn').onclick=()=>openNotifPanel();
